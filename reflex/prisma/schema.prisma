@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Reflex core models ---------------------------------------------------------
+
+/// A triaged email. Mirrors the v1 decision schema.
+model Email {
+  id            String   @id @default(cuid())
+  /// Gmail message id (nullable for synthetic/pasted emails).
+  gmailId       String?
+  sender        String
+  senderName    String?
+  subject       String
+  /// 200-char snippet used for triage + display.
+  snippet       String
+  /// Full body (optional, for digest / escalation).
+  body          String?
+  /// 8 categories: action_needed | meeting | fyi_work | transactional | newsletter | social | security_alert | spam
+  category      String
+  /// 0-3: ignore | when-free | today | right-now
+  attention     Int
+  /// Final placement bucket: NOW | TODAY | WEEK | ARCHIVE | REVIEW
+  bucket        String
+  /// Confidence of the top category, 0..1
+  confidence    Float
+  /// Top-3 category candidates as JSON: [{category, prob}, ...]
+  topCandidates String
+  /// Full distribution as JSON: {category: prob, ...}
+  distribution  String
+  /// Noul-style boolean scores 0/1
+  actionNeeded  Float
+  fromHuman     Float
+  consequence   Float
+  churnSignal   Float
+  schemaVersion Int      @default(1)
+  isSample      Boolean  @default(false)
+  /// "local" = Laya-equivalent deterministic decider · "llm" = cloud LLM escalator · "fallback" = LLM unreachable
+  source        String   @default("local")
+  createdAt     DateTime @default(now())
+  triagedAt     DateTime @default(now())
+
+  corrections   Correction[]
+
+  @@index([bucket])
+  @@index([createdAt])
+}
+
+/// A user "wrong bucket" correction — fuel for the flywheel.
+model Correction {
+  id        String   @id @default(cuid())
+  emailId   String
+  email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  fromBucket String
+  toBucket   String
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([emailId])
+}
+
+/// Periodic calibration snapshot (ECE, accuracy, review rate).
+model CalibrationSnapshot {
+  id               String   @id @default(cuid())
+  ece              Float
+  accuracy         Float
+  reviewRate       Float
+  totalEmails      Int
+  correctionsCount Int
+  createdAt        DateTime @default(now())
+}
+
+/// Simple key/value settings (e.g. review confidence threshold).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
